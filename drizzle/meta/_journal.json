@@ -15,6 +15,13 @@
       "when": 1767528166812,
       "tag": "0001_wet_stingray",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1767533434071,
+      "tag": "0002_glorious_magik",
+      "breakpoints": true
     }
   ]
 }

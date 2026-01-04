@@ -1,0 +1,1 @@
+ALTER TABLE `unlocked_scrolls` ADD `viewedAt` timestamp;

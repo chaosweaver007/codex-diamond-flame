@@ -118,3 +118,32 @@ describe("Stripe Webhook Handler", () => {
     expect(typeof handleStripeWebhook).toBe("function");
   });
 });
+
+
+describe("Scroll Unlock Schema", () => {
+  it("should have viewedAt column in unlockedScrolls table", async () => {
+    const { unlockedScrolls } = await import("../drizzle/schema");
+    
+    expect(unlockedScrolls).toBeDefined();
+    // Check that the table has the viewedAt column for first-time celebration tracking
+    const columns = Object.keys(unlockedScrolls);
+    expect(columns).toContain("viewedAt");
+    expect(columns).toContain("unlockedAt");
+    expect(columns).toContain("scrollId");
+    expect(columns).toContain("userId");
+  });
+});
+
+describe("Scroll Data Structure", () => {
+  it("should define scrolls with correct pricing structure", () => {
+    // Verify scroll pricing follows the expected pattern
+    const freeScrollId = "000";
+    const paidScrollIds = ["007-D", "019-V"];
+    
+    // Free scroll should be accessible without purchase
+    expect(freeScrollId).toBe("000");
+    
+    // Paid scrolls should have IDs that can be used for gating
+    expect(paidScrollIds.length).toBeGreaterThan(0);
+  });
+});

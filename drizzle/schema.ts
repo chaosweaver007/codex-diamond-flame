@@ -52,6 +52,7 @@ export const unlockedScrolls = mysqlTable("unlocked_scrolls", {
   userId: int("userId").notNull(),
   scrollId: varchar("scrollId", { length: 32 }).notNull(),
   unlockedAt: timestamp("unlockedAt").defaultNow().notNull(),
+  viewedAt: timestamp("viewedAt"), // null until first view, triggers celebration
 });
 
 export type UnlockedScroll = typeof unlockedScrolls.$inferSelect;

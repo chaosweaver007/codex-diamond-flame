@@ -69,3 +69,14 @@
 - [ ] Add user profile/settings page
 - [ ] Implement "Reflected Scrolls" save feature
 - [ ] Add email newsletter integration
+
+## Phase 4: Scroll Unlock Logic
+
+- [x] Add backend API endpoint to check scroll unlock status
+- [x] Add backend API endpoint to unlock scroll after purchase
+- [x] Update FlipbookScroll with locked/unlocked visual states
+- [x] Add sigil overlay for locked scrolls
+- [x] Add "Unlock with Purchase" prompt modal
+- [x] Implement first-time unlock celebration (bloom effect + tone)
+- [x] Persist unlock state to database
+- [x] Connect scroll purchases to unlock logic

@@ -60,12 +60,79 @@ export const appRouter = router({
       if (!db) return [];
       
       const result = await db
-        .select({ scrollId: unlockedScrolls.scrollId })
+        .select({ scrollId: unlockedScrolls.scrollId, unlockedAt: unlockedScrolls.unlockedAt })
         .from(unlockedScrolls)
         .where(eq(unlockedScrolls.userId, ctx.user.id));
       
-      return result.map(r => r.scrollId);
+      return result;
     }),
+    
+    checkScrollAccess: protectedProcedure
+      .input(z.object({ scrollId: z.string() }))
+      .query(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) return { hasAccess: false, isFirstTime: false };
+        
+        // Check if user has unlocked this scroll
+        const result = await db
+          .select({ scrollId: unlockedScrolls.scrollId, viewedAt: unlockedScrolls.viewedAt })
+          .from(unlockedScrolls)
+          .where(eq(unlockedScrolls.userId, ctx.user.id))
+          .limit(1);
+        
+        const unlocked = result.find(r => r.scrollId === input.scrollId);
+        
+        if (!unlocked) {
+          return { hasAccess: false, isFirstTime: false };
+        }
+        
+        // Check if this is the first time viewing (viewedAt is null)
+        const isFirstTime = !unlocked.viewedAt;
+        
+        return { hasAccess: true, isFirstTime };
+      }),
+    
+    markScrollViewed: protectedProcedure
+      .input(z.object({ scrollId: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database unavailable");
+        
+        // Update viewedAt timestamp
+        await db
+          .update(unlockedScrolls)
+          .set({ viewedAt: new Date() })
+          .where(eq(unlockedScrolls.userId, ctx.user.id));
+        
+        return { success: true };
+      }),
+    
+    unlockScroll: protectedProcedure
+      .input(z.object({ scrollId: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database unavailable");
+        
+        // Check if already unlocked
+        const existing = await db
+          .select()
+          .from(unlockedScrolls)
+          .where(eq(unlockedScrolls.userId, ctx.user.id))
+          .limit(1);
+        
+        if (existing.find(r => r.scrollId === input.scrollId)) {
+          return { success: true, alreadyUnlocked: true };
+        }
+        
+        // Insert new unlock record
+        await db.insert(unlockedScrolls).values({
+          userId: ctx.user.id,
+          scrollId: input.scrollId,
+          unlockedAt: new Date(),
+        });
+        
+        return { success: true, alreadyUnlocked: false };
+      }),
   }),
 
   // Stripe checkout and payments
