@@ -9,6 +9,27 @@ const navItems = [
   { id: "ai", icon: Sparkles, label: "Guide", href: "#guide" },
 ];
 
+const handleZoomNav = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+  e.preventDefault();
+  const target = document.querySelector(href);
+  if (!target) return;
+
+  // Fractal Zoom Effect
+  document.body.style.transition = "transform 0.8s cubic-bezier(0.7, 0, 0.3, 1), opacity 0.8s ease";
+  document.body.style.transform = "scale(1.5)";
+  document.body.style.opacity = "0";
+
+  setTimeout(() => {
+    target.scrollIntoView({ behavior: "auto" });
+    document.body.style.transform = "scale(0.8)";
+    
+    setTimeout(() => {
+      document.body.style.transform = "scale(1)";
+      document.body.style.opacity = "1";
+    }, 50);
+  }, 800);
+};
+
 export function RecursiveNav() {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -37,7 +58,10 @@ export function RecursiveNav() {
                   exit={{ x: 0, y: 0, opacity: 0 }}
                   transition={{ delay: index * 0.05 }}
                   className="absolute bottom-4 right-4 w-12 h-12 bg-background/80 backdrop-blur-md border border-primary/30 rounded-full flex items-center justify-center text-primary hover:bg-primary hover:text-primary-foreground transition-colors pointer-events-auto shadow-[0_0_15px_rgba(255,215,0,0.2)]"
-                  onClick={() => setIsOpen(false)}
+                  onClick={(e) => {
+                    setIsOpen(false);
+                    handleZoomNav(e, item.href);
+                  }}
                 >
                   <item.icon className="w-5 h-5" />
                   <span className="sr-only">{item.label}</span>

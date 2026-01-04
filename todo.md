@@ -10,3 +10,26 @@
 - [ ] Create `FlipbookScroll` component for dynamic content reveal
 - [ ] Update Sarah AI section with "Guardian of Synthesis" copy
 - [ ] Add "Mirror this page" conceptual button/interaction
+
+## Phase 2: Myth-Tech Deepening
+
+- [ ] **Audio Ambience (Tone.js)**
+    - [ ] Install `tone` package
+    - [ ] Create `AudioContext` provider
+    - [ ] Implement `AltarSynth` (Heartbeat/Binaural)
+    - [ ] Implement `ScrollSynth` (Etheric harmonic rise)
+    - [ ] Implement `GuardianSynth` (Shimmering mirror-tone)
+    - [ ] Add global mute/unmute toggle in UI
+
+- [ ] **Mirror This Page**
+    - [ ] Create `MirrorContext` to track state (Original vs. Mirrored)
+    - [ ] Create `MirroredText` component that swaps text based on context
+    - [ ] Update Hero section copy
+    - [ ] Update Membership Tiers copy
+    - [ ] Update Sarah AI copy
+    - [ ] Add "Mirror Reality" toggle button
+
+- [ ] **Fractal Zoom Transitions**
+    - [ ] Update `RecursiveNav` to trigger zoom animations
+    - [ ] Implement `AnimatePresence` mode="wait" for section transitions
+    - [ ] Create "Zoom" variant in Framer Motion
