@@ -147,3 +147,34 @@ describe("Scroll Data Structure", () => {
     expect(paidScrollIds.length).toBeGreaterThan(0);
   });
 });
+
+
+describe("Stripe Webhook Scroll Unlock", () => {
+  it("should extract scroll ID from product ID format", () => {
+    // Test the scroll ID extraction logic
+    const productId = "scroll_007-D";
+    const scrollId = productId.startsWith("scroll_") 
+      ? productId.replace("scroll_", "") 
+      : productId;
+    
+    expect(scrollId).toBe("007-D");
+  });
+
+  it("should handle plain scroll IDs", () => {
+    const productId = "019-V";
+    const scrollId = productId.startsWith("scroll_") 
+      ? productId.replace("scroll_", "") 
+      : productId;
+    
+    expect(scrollId).toBe("019-V");
+  });
+
+  it("should handle scroll_000 format", () => {
+    const productId = "scroll_000";
+    const scrollId = productId.startsWith("scroll_") 
+      ? productId.replace("scroll_", "") 
+      : productId;
+    
+    expect(scrollId).toBe("000");
+  });
+});

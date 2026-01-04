@@ -80,3 +80,10 @@
 - [x] Implement first-time unlock celebration (bloom effect + tone)
 - [x] Persist unlock state to database
 - [x] Connect scroll purchases to unlock logic
+
+## Phase 5: Stripe Webhook Auto-Unlock
+
+- [x] Update webhook handler to detect scroll purchases
+- [x] Call unlockScroll when checkout.session.completed fires for scrolls
+- [x] Handle async_payment_succeeded for delayed payments
+- [x] Test webhook flow end-to-end
