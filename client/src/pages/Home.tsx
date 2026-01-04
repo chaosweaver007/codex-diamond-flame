@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { ArrowRight, Flame, Gem, Sparkles, Volume2, VolumeX, RefreshCw, Loader2, Lock, LogOut, User } from "lucide-react";
+import { ArrowRight, Flame, Gem, Sparkles, Volume2, VolumeX, RefreshCw, Loader2, Lock, LogOut, User, UserCircle } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
 import { RecursiveNav } from "@/components/RecursiveNav";
 import { AltarStore } from "@/components/AltarStore";
@@ -98,12 +98,24 @@ export default function Home() {
         {isAuthenticated ? (
           <div className="flex items-center gap-2 bg-background/50 backdrop-blur-sm border border-white/10 rounded-full px-3 py-1.5">
             <User className="w-4 h-4 text-primary" />
-            <span className="text-sm text-muted-foreground">{user?.name || "Seeker"}</span>
+            <a href="/profile" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+              {user?.name || "Seeker"}
+            </a>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => window.location.href = "/profile"}
+              className="h-7 w-7 rounded-full hover:bg-primary/20 text-muted-foreground hover:text-primary"
+              title="View Profile"
+            >
+              <UserCircle className="w-3.5 h-3.5" />
+            </Button>
             <Button 
               variant="ghost" 
               size="icon" 
               onClick={() => logout()}
               className="h-7 w-7 rounded-full hover:bg-destructive/20 text-muted-foreground hover:text-destructive"
+              title="Sign Out"
             >
               <LogOut className="w-3.5 h-3.5" />
             </Button>

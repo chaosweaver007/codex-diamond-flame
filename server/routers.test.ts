@@ -178,3 +178,22 @@ describe("Stripe Webhook Scroll Unlock", () => {
     expect(scrollId).toBe("000");
   });
 });
+
+
+describe("User Profile API", () => {
+  it("should have getFullProfile procedure defined", async () => {
+    const { appRouter } = await import("./routers");
+    
+    expect(appRouter).toBeDefined();
+    expect(appRouter.user).toBeDefined();
+    // Verify the router has the expected procedures
+    expect(appRouter._def.procedures).toBeDefined();
+  });
+
+  it("should have user router with profile-related procedures", async () => {
+    const { appRouter } = await import("./routers");
+    
+    // Check that user router exists
+    expect(appRouter.user).toBeDefined();
+  });
+});

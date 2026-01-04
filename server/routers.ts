@@ -60,11 +60,60 @@ export const appRouter = router({
       if (!db) return [];
       
       const result = await db
-        .select({ scrollId: unlockedScrolls.scrollId, unlockedAt: unlockedScrolls.unlockedAt })
+        .select({ scrollId: unlockedScrolls.scrollId, unlockedAt: unlockedScrolls.unlockedAt, viewedAt: unlockedScrolls.viewedAt })
         .from(unlockedScrolls)
         .where(eq(unlockedScrolls.userId, ctx.user.id));
       
       return result;
+    }),
+    
+    getFullProfile: protectedProcedure.query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+      
+      // Get user data
+      const userResult = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, ctx.user.id))
+        .limit(1);
+      
+      const user = userResult[0];
+      if (!user) throw new Error("User not found");
+      
+      // Get unlocked scrolls
+      const scrollsResult = await db
+        .select()
+        .from(unlockedScrolls)
+        .where(eq(unlockedScrolls.userId, ctx.user.id));
+      
+      // Get purchase history
+      const purchasesResult = await db
+        .select()
+        .from(purchases)
+        .where(eq(purchases.userId, ctx.user.id))
+        .orderBy(desc(purchases.createdAt));
+      
+      // Get chat history count
+      const chatHistoryResult = await db
+        .select()
+        .from(chatHistory)
+        .where(eq(chatHistory.userId, ctx.user.id));
+      
+      return {
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          tier: user.tier,
+          isMirrored: user.isMirrored,
+          createdAt: user.createdAt,
+          lastSignedIn: user.lastSignedIn,
+        },
+        unlockedScrolls: scrollsResult,
+        purchases: purchasesResult,
+        chatMessageCount: chatHistoryResult.length,
+      };
     }),
     
     checkScrollAccess: protectedProcedure

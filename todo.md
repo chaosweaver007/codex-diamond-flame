@@ -87,3 +87,15 @@
 - [x] Call unlockScroll when checkout.session.completed fires for scrolls
 - [x] Handle async_payment_succeeded for delayed payments
 - [x] Test webhook flow end-to-end
+
+## Phase 6: User Profile Page
+
+- [x] Add backend API endpoint for user profile data
+- [x] Add backend API endpoint for purchase history
+- [x] Create Profile page component
+- [x] Display unlocked scrolls with clickable links
+- [x] Show membership tier badge and benefits
+- [x] Display purchase history with timestamps
+- [x] Add Mirror preference toggle
+- [x] Add route to App.tsx
+- [x] Add navigation link to profile
