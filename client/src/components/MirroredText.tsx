@@ -11,7 +11,7 @@ export function MirroredText({ original, mirrored, className = "" }: MirroredTex
   const { isMirrored } = useMirror();
 
   return (
-    <div className={`relative inline-block ${className}`}>
+    <span className={`relative inline ${className}`}>
       <AnimatePresence mode="wait">
         <motion.span
           key={isMirrored ? "mirrored" : "original"}
@@ -19,11 +19,10 @@ export function MirroredText({ original, mirrored, className = "" }: MirroredTex
           animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
           exit={{ opacity: 0, y: -5, filter: "blur(4px)" }}
           transition={{ duration: 0.5 }}
-          className="block"
         >
           {isMirrored ? mirrored : original}
         </motion.span>
       </AnimatePresence>
-    </div>
+    </span>
   );
 }
