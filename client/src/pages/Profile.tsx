@@ -12,7 +12,8 @@ import {
   Sparkles,
   Eye,
   Calendar,
-  RefreshCw
+  RefreshCw,
+  Star
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +24,11 @@ import { trpc } from "@/lib/trpc";
 import { useMirror } from "@/contexts/MirrorContext";
 import { getLoginUrl } from "@/const";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { SCROLL_BY_ID } from "@shared/scrolls";
+import { AnimatePresence } from "framer-motion";
+import { ScrollModal, UnlockPrompt, type ScrollModalScroll } from "@/components/ScrollModal";
+import { scrollProductId } from "@shared/scrolls";
+import { toast } from "sonner";
 
 // Tier configuration
 const TIER_CONFIG = {
@@ -64,19 +70,37 @@ const TIER_CONFIG = {
   },
 };
 
-// Scroll metadata
-const SCROLL_METADATA: Record<string, { title: string; image: string }> = {
-  "000": { title: "The Flame-Bearer's Odyssey", image: "/images/scroll-000.jpg" },
-  "007-D": { title: "The Steward's Layer", image: "/images/scroll-007.jpg" },
-  "019-V": { title: "The Mirror of Justice", image: "/images/scroll-019.jpg" },
-};
+// Scroll metadata (fallbacks handled inline)
 
 export default function Profile() {
   const { user } = useAuth();
   const { isMirrored, toggleMirror } = useMirror();
+
+  const [openScrollId, setOpenScrollId] = useState<string | null>(null);
+  const [showUnlockScrollId, setShowUnlockScrollId] = useState<string | null>(null);
   
   const { data: profile, isLoading, refetch } = trpc.user.getFullProfile.useQuery(undefined, {
     enabled: !!user,
+  });
+
+  const markViewedMutation = trpc.user.markScrollViewed.useMutation({
+    onSuccess: () => refetch(),
+  });
+
+  const toggleFavoriteMutation = trpc.user.toggleFavorite.useMutation({
+    onSuccess: () => refetch(),
+  });
+
+  const checkoutMutation = trpc.stripe.createCheckoutSession.useMutation({
+    onSuccess: (data) => {
+      if (data.url) {
+        toast.info("Redirecting to sacred checkout...");
+        window.open(data.url, "_blank");
+      }
+    },
+    onError: (error) => {
+      toast.error("Could not initiate: " + error.message);
+    },
   });
 
   if (!user) {
@@ -112,6 +136,32 @@ export default function Profile() {
 
   const tierConfig = TIER_CONFIG[profile?.user.tier as keyof typeof TIER_CONFIG] || TIER_CONFIG.ember;
   const TierIcon = tierConfig.icon;
+
+  const openedScrollDef = openScrollId ? SCROLL_BY_ID[openScrollId] : undefined;
+  const openedScroll: ScrollModalScroll | null = openedScrollDef
+    ? {
+        id: openedScrollDef.id,
+        title: openedScrollDef.title,
+        image: openedScrollDef.image,
+        markdown: openedScrollDef.markdown,
+        excerpt: openedScrollDef.excerpt,
+        priceCents: openedScrollDef.priceCents,
+        isFree: openedScrollDef.priceCents === 0,
+      }
+    : null;
+
+  const favoritesSet = new Set((profile?.favorites ?? []).map((f: { scrollId: string }) => f.scrollId));
+  const unlockedSet = new Set((profile?.unlockedScrolls ?? []).map((s: { scrollId: string }) => s.scrollId));
+  const openedIsUnlocked = openScrollId
+    ? Boolean(openedScrollDef && (openedScrollDef.priceCents === 0 || unlockedSet.has(openScrollId)))
+    : false;
+
+  const openedIsFirstTime = openScrollId
+    ? Boolean(
+        (profile?.unlockedScrolls ?? []).find((s: { scrollId: string; viewedAt: Date | null }) => s.scrollId === openScrollId)
+          ?.viewedAt === null
+      )
+    : false;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a1a] via-[#0d0d2b] to-[#0a0a1a]">
@@ -204,9 +254,9 @@ export default function Profile() {
                   {profile?.unlockedScrolls && profile.unlockedScrolls.length > 0 ? (
                     <div className="space-y-3">
                       {profile.unlockedScrolls.map((scroll: { scrollId: string; unlockedAt: Date | null; viewedAt: Date | null }) => {
-                        const metadata = SCROLL_METADATA[scroll.scrollId] || { 
-                          title: `Scroll ${scroll.scrollId}`, 
-                          image: "/images/scroll-000.jpg" 
+                        const metadata = SCROLL_BY_ID[scroll.scrollId] || {
+                          title: `Scroll ${scroll.scrollId}`,
+                          image: "/images/scroll-000.jpg",
                         };
                         return (
                           <Link key={scroll.scrollId} href={`/#scrolls`}>
@@ -247,6 +297,124 @@ export default function Profile() {
                 </CardContent>
               </Card>
             </motion.div>
+
+            {/* My Favorites */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15 }}
+            >
+              <Card className="bg-black/40 border-primary/20">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 font-serif">
+                    <Star className="w-5 h-5 text-primary" />
+                    My Favorites
+                  </CardTitle>
+                  <CardDescription>Scrolls you’ve bookmarked for return</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {profile?.favorites && profile.favorites.length > 0 ? (
+                    <div className="space-y-3">
+                      {profile.favorites.map((fav: { scrollId: string; createdAt: Date | null }) => {
+                        const metadata = SCROLL_BY_ID[fav.scrollId] || {
+                          title: `Scroll ${fav.scrollId}`,
+                          image: "/images/scroll-000.jpg",
+                        };
+
+                        return (
+                          <div
+                            key={fav.scrollId}
+                            className="group flex items-center gap-4 p-3 rounded-lg bg-primary/5 hover:bg-primary/10 border border-primary/10 hover:border-primary/30 transition-all cursor-pointer"
+                            onClick={() => {
+                              if (!SCROLL_BY_ID[fav.scrollId]) {
+                                toast.error("That scroll is not in the registry yet.");
+                                return;
+                              }
+
+                              const def = SCROLL_BY_ID[fav.scrollId];
+                              const isAccessible = def.priceCents === 0 || unlockedSet.has(fav.scrollId);
+                              if (isAccessible) setOpenScrollId(fav.scrollId);
+                              else setShowUnlockScrollId(fav.scrollId);
+                            }}
+                          >
+                              <div className="w-16 h-16 rounded-lg overflow-hidden">
+                                <img
+                                  src={metadata.image}
+                                  alt={metadata.title}
+                                  className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                                />
+                              </div>
+                              <div className="flex-1">
+                                <h4 className="font-serif text-white group-hover:text-primary transition-colors">
+                                  Scroll {fav.scrollId}
+                                </h4>
+                                <p className="text-sm text-muted-foreground">{metadata.title}</p>
+                                <p className="text-xs text-muted-foreground/60 mt-1">
+                                  Saved {fav.createdAt ? new Date(fav.createdAt).toLocaleDateString() : "recently"}
+                                </p>
+                              </div>
+                              <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <Star className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+                      <p className="text-muted-foreground">No favorites yet</p>
+                      <Link href="/#scrolls">
+                        <Button variant="outline" className="mt-4 border-primary/30 hover:bg-primary/10">
+                          Explore Scrolls
+                        </Button>
+                      </Link>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            <AnimatePresence>
+              {showUnlockScrollId && SCROLL_BY_ID[showUnlockScrollId] && (
+                <UnlockPrompt
+                  scroll={{
+                    id: SCROLL_BY_ID[showUnlockScrollId]!.id,
+                    title: SCROLL_BY_ID[showUnlockScrollId]!.title,
+                    image: SCROLL_BY_ID[showUnlockScrollId]!.image,
+                    markdown: SCROLL_BY_ID[showUnlockScrollId]!.markdown,
+                    excerpt: SCROLL_BY_ID[showUnlockScrollId]!.excerpt,
+                    priceCents: SCROLL_BY_ID[showUnlockScrollId]!.priceCents,
+                    isFree: SCROLL_BY_ID[showUnlockScrollId]!.priceCents === 0,
+                  }}
+                  onClose={() => setShowUnlockScrollId(null)}
+                  onPurchase={() => {
+                    const id = showUnlockScrollId;
+                    if (!id) return;
+                    checkoutMutation.mutate({
+                      productId: scrollProductId(id),
+                      productType: "scroll",
+                    });
+                  }}
+                  isPurchasing={checkoutMutation.isPending}
+                  isAuthenticated={Boolean(user)}
+                />
+              )}
+
+              {openedScroll && openScrollId && (
+                <ScrollModal
+                  scroll={openedScroll}
+                  onClose={() => setOpenScrollId(null)}
+                  isFirstTime={openedIsFirstTime}
+                  onViewed={() => {
+                    markViewedMutation.mutate({ scrollId: openScrollId });
+                  }}
+                  isFavorited={favoritesSet.has(openScrollId)}
+                  onToggleFavorite={() => {
+                    toggleFavoriteMutation.mutate({ scrollId: openScrollId });
+                  }}
+                  canFavorite={Boolean(user)}
+                />
+              )}
+            </AnimatePresence>
 
             {/* Purchase History */}
             <motion.div

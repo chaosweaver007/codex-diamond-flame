@@ -1,7 +1,8 @@
 import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { TRPCClientError } from "@trpc/client";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { toast } from "sonner";
 
 type UseAuthOptions = {
   redirectOnUnauthenticated?: boolean;
@@ -23,6 +24,10 @@ export function useAuth(options?: UseAuthOptions) {
       utils.auth.me.setData(undefined, null);
     },
   });
+
+  const authToastStateRef = useRef<{ initialized: boolean; wasAuthed: boolean }>(
+    { initialized: false, wasAuthed: false }
+  );
 
   const logout = useCallback(async () => {
     try {
@@ -59,6 +64,24 @@ export function useAuth(options?: UseAuthOptions) {
     logoutMutation.error,
     logoutMutation.isPending,
   ]);
+
+  useEffect(() => {
+    const ref = authToastStateRef.current;
+    const isAuthedNow = Boolean(meQuery.data);
+
+    if (!ref.initialized) {
+      if (meQuery.isLoading) return;
+      ref.initialized = true;
+      ref.wasAuthed = isAuthedNow;
+      return;
+    }
+
+    if (ref.wasAuthed !== isAuthedNow) {
+      if (isAuthedNow) toast.success("Signed in");
+      else toast.info("Signed out");
+      ref.wasAuthed = isAuthedNow;
+    }
+  }, [meQuery.data, meQuery.isLoading]);
 
   useEffect(() => {
     if (!redirectOnUnauthenticated) return;

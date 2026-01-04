@@ -6,8 +6,8 @@ import { z } from "zod";
 import Stripe from "stripe";
 import { invokeLLM } from "./_core/llm";
 import { getDb } from "./db";
-import { users, chatHistory, unlockedScrolls, purchases } from "../drizzle/schema";
-import { eq, desc } from "drizzle-orm";
+import { users, chatHistory, unlockedScrolls, purchases, favorites } from "../drizzle/schema";
+import { and, eq, desc } from "drizzle-orm";
 import { MEMBERSHIP_TIERS, ARTIFACTS } from "./stripe/products";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -93,6 +93,13 @@ export const appRouter = router({
         .from(purchases)
         .where(eq(purchases.userId, ctx.user.id))
         .orderBy(desc(purchases.createdAt));
+
+      // Get favorites
+      const favoritesResult = await db
+        .select({ scrollId: favorites.scrollId, createdAt: favorites.createdAt })
+        .from(favorites)
+        .where(eq(favorites.userId, ctx.user.id))
+        .orderBy(desc(favorites.createdAt));
       
       // Get chat history count
       const chatHistoryResult = await db
@@ -111,10 +118,50 @@ export const appRouter = router({
           lastSignedIn: user.lastSignedIn,
         },
         unlockedScrolls: scrollsResult,
+        favorites: favoritesResult,
         purchases: purchasesResult,
         chatMessageCount: chatHistoryResult.length,
       };
     }),
+
+    getFavorites: protectedProcedure.query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) return [];
+
+      return db
+        .select({ scrollId: favorites.scrollId, createdAt: favorites.createdAt })
+        .from(favorites)
+        .where(eq(favorites.userId, ctx.user.id))
+        .orderBy(desc(favorites.createdAt));
+    }),
+
+    toggleFavorite: protectedProcedure
+      .input(z.object({ scrollId: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database unavailable");
+
+        const existing = await db
+          .select({ id: favorites.id })
+          .from(favorites)
+          .where(and(eq(favorites.userId, ctx.user.id), eq(favorites.scrollId, input.scrollId)))
+          .limit(1);
+
+        if (existing.length > 0) {
+          await db
+            .delete(favorites)
+            .where(and(eq(favorites.userId, ctx.user.id), eq(favorites.scrollId, input.scrollId)));
+          return { favorited: false } as const;
+        }
+
+        await db.insert(favorites).values({
+          userId: ctx.user.id,
+          scrollId: input.scrollId,
+          createdAt: new Date(),
+        });
+
+        return { favorited: true } as const;
+      }),
     
     checkScrollAccess: protectedProcedure
       .input(z.object({ scrollId: z.string() }))
@@ -126,17 +173,15 @@ export const appRouter = router({
         const result = await db
           .select({ scrollId: unlockedScrolls.scrollId, viewedAt: unlockedScrolls.viewedAt })
           .from(unlockedScrolls)
-          .where(eq(unlockedScrolls.userId, ctx.user.id))
+          .where(and(eq(unlockedScrolls.userId, ctx.user.id), eq(unlockedScrolls.scrollId, input.scrollId)))
           .limit(1);
-        
-        const unlocked = result.find(r => r.scrollId === input.scrollId);
-        
-        if (!unlocked) {
+
+        if (result.length === 0) {
           return { hasAccess: false, isFirstTime: false };
         }
         
         // Check if this is the first time viewing (viewedAt is null)
-        const isFirstTime = !unlocked.viewedAt;
+        const isFirstTime = !result[0]?.viewedAt;
         
         return { hasAccess: true, isFirstTime };
       }),
@@ -151,7 +196,7 @@ export const appRouter = router({
         await db
           .update(unlockedScrolls)
           .set({ viewedAt: new Date() })
-          .where(eq(unlockedScrolls.userId, ctx.user.id));
+          .where(and(eq(unlockedScrolls.userId, ctx.user.id), eq(unlockedScrolls.scrollId, input.scrollId)));
         
         return { success: true };
       }),
@@ -166,10 +211,10 @@ export const appRouter = router({
         const existing = await db
           .select()
           .from(unlockedScrolls)
-          .where(eq(unlockedScrolls.userId, ctx.user.id))
+          .where(and(eq(unlockedScrolls.userId, ctx.user.id), eq(unlockedScrolls.scrollId, input.scrollId)))
           .limit(1);
-        
-        if (existing.find(r => r.scrollId === input.scrollId)) {
+
+        if (existing.length > 0) {
           return { success: true, alreadyUnlocked: true };
         }
         
