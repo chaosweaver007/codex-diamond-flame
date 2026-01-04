@@ -1,0 +1,120 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// Mock the database
+vi.mock("./db", () => ({
+  getDb: vi.fn().mockResolvedValue({
+    select: vi.fn().mockReturnThis(),
+    from: vi.fn().mockReturnThis(),
+    where: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockResolvedValue([{ tier: "ember", isMirrored: false }]),
+    orderBy: vi.fn().mockResolvedValue([]),
+    insert: vi.fn().mockReturnThis(),
+    values: vi.fn().mockResolvedValue({}),
+    update: vi.fn().mockReturnThis(),
+    set: vi.fn().mockResolvedValue({}),
+    delete: vi.fn().mockReturnThis(),
+  }),
+}));
+
+// Mock Stripe
+vi.mock("stripe", () => {
+  return {
+    default: vi.fn().mockImplementation(() => ({
+      checkout: {
+        sessions: {
+          create: vi.fn().mockResolvedValue({
+            url: "https://checkout.stripe.com/test-session",
+          }),
+        },
+      },
+    })),
+  };
+});
+
+// Mock LLM
+vi.mock("./_core/llm", () => ({
+  invokeLLM: vi.fn().mockResolvedValue({
+    choices: [{ message: { content: "The mirror reflects your question back to you." } }],
+  }),
+}));
+
+describe("Stripe Products Configuration", () => {
+  it("should have valid membership tiers defined", async () => {
+    const { MEMBERSHIP_TIERS } = await import("./stripe/products");
+    
+    expect(MEMBERSHIP_TIERS).toBeDefined();
+    expect(MEMBERSHIP_TIERS.ember).toBeDefined();
+    expect(MEMBERSHIP_TIERS.flamewalker).toBeDefined();
+    expect(MEMBERSHIP_TIERS.harmonizer).toBeDefined();
+    expect(MEMBERSHIP_TIERS.architect).toBeDefined();
+    
+    // Verify tier structure
+    expect(MEMBERSHIP_TIERS.ember.price).toBe(0);
+    expect(MEMBERSHIP_TIERS.flamewalker.priceMonthly).toBe(3300);
+    expect(MEMBERSHIP_TIERS.harmonizer.priceMonthly).toBe(8800);
+    expect(MEMBERSHIP_TIERS.architect.priceMonthly).toBe(33300);
+  });
+
+  it("should have valid artifacts defined", async () => {
+    const { ARTIFACTS } = await import("./stripe/products");
+    
+    expect(ARTIFACTS).toBeDefined();
+    expect(ARTIFACTS.scroll_000).toBeDefined();
+    expect(ARTIFACTS.diamond_mind_book).toBeDefined();
+    expect(ARTIFACTS.codex_bundle).toBeDefined();
+    
+    // Verify artifact structure
+    expect(ARTIFACTS.scroll_000.price).toBe(1100);
+    expect(ARTIFACTS.diamond_mind_book.price).toBe(2200);
+    expect(ARTIFACTS.codex_bundle.price).toBe(4400);
+  });
+
+  it("should have correct product types", async () => {
+    const { ARTIFACTS } = await import("./stripe/products");
+    
+    expect(ARTIFACTS.scroll_000.type).toBe("scroll");
+    expect(ARTIFACTS.codex_bundle.type).toBe("artifact");
+    expect(ARTIFACTS.ritual_mirror.type).toBe("ritual");
+  });
+});
+
+describe("Database Schema", () => {
+  it("should have users table with correct columns", async () => {
+    const { users } = await import("../drizzle/schema");
+    
+    expect(users).toBeDefined();
+    // Check that the table has the expected columns
+    const columns = Object.keys(users);
+    expect(columns).toContain("id");
+    expect(columns).toContain("tier");
+    expect(columns).toContain("isMirrored");
+    expect(columns).toContain("stripeCustomerId");
+  });
+
+  it("should have chatHistory table", async () => {
+    const { chatHistory } = await import("../drizzle/schema");
+    
+    expect(chatHistory).toBeDefined();
+  });
+
+  it("should have unlockedScrolls table", async () => {
+    const { unlockedScrolls } = await import("../drizzle/schema");
+    
+    expect(unlockedScrolls).toBeDefined();
+  });
+
+  it("should have purchases table", async () => {
+    const { purchases } = await import("../drizzle/schema");
+    
+    expect(purchases).toBeDefined();
+  });
+});
+
+describe("Stripe Webhook Handler", () => {
+  it("should export handleStripeWebhook function", async () => {
+    const { handleStripeWebhook } = await import("./stripe/webhook");
+    
+    expect(handleStripeWebhook).toBeDefined();
+    expect(typeof handleStripeWebhook).toBe("function");
+  });
+});

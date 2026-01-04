@@ -1,38 +1,71 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { ShoppingBag, Music, Book, Sparkles } from "lucide-react";
+import { Music, Book, Sparkles, Loader2, Lock } from "lucide-react";
+import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { getLoginUrl } from "@/const";
+import { toast } from "sonner";
 
 const offerings = [
   {
-    id: 1,
+    id: "diamond_mind_book",
     title: "The Diamond Mind",
     type: "Digital Scroll",
-    price: "$22",
+    price: 22,
     icon: Book,
     desc: "A guide to awakening your infinite self.",
-    image: "/images/scroll-000.jpg"
+    image: "/images/scroll-000.jpg",
+    productType: "artifact" as const,
   },
   {
-    id: 2,
-    title: "GL1MM3R-B33T Vol. 1",
-    type: "Audio Ritual",
-    price: "$11",
+    id: "scroll_000",
+    title: "The Flame-Bearer's Odyssey",
+    type: "Origin Scroll",
+    price: 11,
     icon: Music,
-    desc: "Binaural beats for deep coding sessions.",
-    image: "/images/scroll-019.jpg"
+    desc: "The origin myth of the Diamond Flame.",
+    image: "/images/scroll-019.jpg",
+    productType: "scroll" as const,
   },
   {
-    id: 3,
-    title: "Selector Kit",
-    type: "Digital Tool",
-    price: "$44",
+    id: "codex_bundle",
+    title: "Complete Codex Bundle",
+    type: "Sacred Package",
+    price: 44,
     icon: Sparkles,
-    desc: "Sigils and templates for your own Codex.",
-    image: "/images/scroll-007.jpg"
+    desc: "All scrolls, all wisdom, one sacred package.",
+    image: "/images/scroll-007.jpg",
+    productType: "artifact" as const,
   }
 ];
 
 export function AltarStore() {
+  const { isAuthenticated } = useAuth();
+  const checkoutMutation = trpc.stripe.createCheckoutSession.useMutation({
+    onSuccess: (data) => {
+      if (data.url) {
+        toast.info("Redirecting to sacred checkout...");
+        window.open(data.url, "_blank");
+      }
+    },
+    onError: (error) => {
+      toast.error("The altar could not process your offering: " + error.message);
+    },
+  });
+
+  const handleAcquire = (item: typeof offerings[0]) => {
+    if (!isAuthenticated) {
+      toast.info("Please sign in to acquire offerings");
+      window.location.href = getLoginUrl();
+      return;
+    }
+    
+    checkoutMutation.mutate({
+      productId: item.id,
+      productType: item.productType,
+    });
+  };
+
   return (
     <section id="store" className="py-24 relative overflow-hidden">
       <div className="container mx-auto px-6 relative z-10">
@@ -76,9 +109,23 @@ export function AltarStore() {
                     {item.desc}
                   </p>
                   <div className="flex items-center justify-between">
-                    <span className="text-xl font-bold text-white">{item.price}</span>
-                    <Button size="sm" className="bg-primary text-primary-foreground hover:bg-white hover:text-black transition-colors">
-                      Acquire
+                    <span className="text-xl font-bold text-white">${item.price}</span>
+                    <Button 
+                      size="sm" 
+                      className="bg-primary text-primary-foreground hover:bg-white hover:text-black transition-colors"
+                      onClick={() => handleAcquire(item)}
+                      disabled={checkoutMutation.isPending}
+                    >
+                      {checkoutMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : !isAuthenticated ? (
+                        <>
+                          <Lock className="w-3 h-3 mr-1" />
+                          Sign In
+                        </>
+                      ) : (
+                        "Acquire"
+                      )}
                     </Button>
                   </div>
                 </div>
