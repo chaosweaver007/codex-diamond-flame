@@ -1,4 +1,5 @@
 import "dotenv/config";
+import "./tracing";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
