@@ -119,9 +119,6 @@ function ScrollCard({
   );
 }
 
-function UnlockPrompt({ 
-  // (moved to @/components/ScrollModal)
-
 export function FlipbookScroll() {
   const { isAuthenticated } = useAuth();
   const [openScroll, setOpenScroll] = useState<ScrollData | null>(null);

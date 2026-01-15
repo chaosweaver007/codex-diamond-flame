@@ -41,14 +41,12 @@ if (!isTracingDisabled) {
     ],
   });
 
-  sdk
-    .start()
-    .then(() => {
-      console.log(`[Tracing] OpenTelemetry SDK started (OTLP ${otlpEndpoint})`);
-    })
-    .catch(error => {
-      console.error("[Tracing] Failed to start OpenTelemetry SDK", error);
-    });
+  try {
+    sdk.start();
+    console.log(`[Tracing] OpenTelemetry SDK started (OTLP ${otlpEndpoint})`);
+  } catch (error) {
+    console.error("[Tracing] Failed to start OpenTelemetry SDK", error);
+  }
 
   const shutdown = async () => {
     try {
