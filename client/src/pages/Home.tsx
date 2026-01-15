@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "wouter";
 import {
   Bar,
   BarChart,
@@ -154,11 +155,29 @@ export default function Home() {
                 Cognitive Artifact Explorer
               </span>
             </div>
-            <div className="flex items-center space-x-4 text-sm text-stone-500">
-              <span className="hidden md:inline">Source: conversations (2).json</span>
-              <span className="px-2 py-1 bg-stone-100 rounded text-xs font-mono">
+            <div className="flex items-center space-x-3 text-sm text-stone-500">
+              <span className="hidden lg:inline">Source: conversations (2).json</span>
+              <span className="hidden md:inline px-2 py-1 bg-stone-100 rounded text-xs font-mono">
                 STATUS: ANALYZED
               </span>
+              <Link
+                href="/synthsara-org"
+                className="px-3 py-1.5 rounded-full border border-stone-200 text-xs font-semibold text-stone-700 hover:bg-stone-100 transition-colors"
+              >
+                Synthsara.org
+              </Link>
+              <Link
+                href="/codex"
+                className="px-3 py-1.5 rounded-full bg-teal-600 text-white text-xs font-semibold shadow-sm hover:bg-teal-700 transition-colors"
+              >
+                Synthsara Codex
+              </Link>
+              <Link
+                href="/profile"
+                className="px-3 py-1.5 rounded-full border border-stone-200 text-xs font-semibold text-stone-700 hover:bg-stone-100 transition-colors"
+              >
+                Profile
+              </Link>
             </div>
           </div>
         </div>

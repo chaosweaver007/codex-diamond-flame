@@ -9,6 +9,8 @@ import { getDb } from "./db";
 import { users, chatHistory, unlockedScrolls, purchases, favorites } from "../drizzle/schema";
 import { and, eq, desc } from "drizzle-orm";
 import { MEMBERSHIP_TIERS, ARTIFACTS } from "./stripe/products";
+import { codexRouter } from "./codex/router";
+import { synthsaraOrgRouter } from "./synthsaraOrg/router";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2025-12-15.clover",
@@ -16,7 +18,9 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 
 export const appRouter = router({
   system: systemRouter,
-  
+  codex: codexRouter,
+  synthsaraOrg: synthsaraOrgRouter,
+
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {

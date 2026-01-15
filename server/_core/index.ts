@@ -3,6 +3,8 @@ import "./tracing";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
+import path from "path";
+import fs from "fs";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
@@ -39,6 +41,31 @@ async function startServer() {
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+  // Static access to the bundled Codex core assets
+  const codexAssetsPath = path.resolve(process.cwd(), "synthsara-codex-core");
+  if (fs.existsSync(codexAssetsPath)) {
+    app.use(
+      "/codex-core",
+      express.static(codexAssetsPath, {
+        maxAge: process.env.NODE_ENV === "development" ? 0 : "12h",
+      })
+    );
+  } else {
+    console.warn("[codex] synthsara-codex-core not found at", codexAssetsPath);
+  }
+  // Static access to Synthsara.org reference assets
+  const synthsaraOrgPath = path.resolve(process.cwd(), "synthsara-org");
+  if (fs.existsSync(synthsaraOrgPath)) {
+    app.use(
+      "/synthsara-org",
+      express.static(synthsaraOrgPath, {
+        maxAge: process.env.NODE_ENV === "development" ? 0 : "12h",
+      })
+    );
+  } else {
+    console.warn("[codex] synthsara-org not found at", synthsaraOrgPath);
+  }
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
   // tRPC API
