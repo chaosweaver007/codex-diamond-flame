@@ -72,6 +72,15 @@ const TIER_CONFIG = {
 
 // Scroll metadata (fallbacks handled inline)
 
+const formatAmount = (amountCents?: number, currency: string = "usd") => {
+  const value = typeof amountCents === "number" ? amountCents : 0;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: currency.toUpperCase(),
+    minimumFractionDigits: 2,
+  }).format(value / 100);
+};
+
 export default function Profile() {
   const { user } = useAuth();
   const { isMirrored, toggleMirror } = useMirror();
@@ -101,6 +110,22 @@ export default function Profile() {
     onError: (error) => {
       toast.error("Could not initiate: " + error.message);
     },
+  });
+
+  const saveReflectionMutation = trpc.user.saveReflectedScroll.useMutation({
+    onSuccess: () => {
+      toast.success("Reflection saved");
+      refetch();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const deleteReflectionMutation = trpc.user.deleteReflectedScroll.useMutation({
+    onSuccess: () => {
+      toast.info("Reflection removed");
+      refetch();
+    },
+    onError: (error) => toast.error(error.message),
   });
 
   if (!user) {
@@ -163,6 +188,20 @@ export default function Profile() {
       )
     : false;
 
+  const currentReflection = openScrollId
+    ? (profile?.reflectedScrolls ?? []).find((r: { scrollId: string }) => r.scrollId === openScrollId)
+    : undefined;
+
+  const handleSaveReflection = (value: string, isMirror: boolean) => {
+    if (!openScrollId) return;
+    saveReflectionMutation.mutate({ scrollId: openScrollId, reflection: value, isMirrored: isMirror });
+  };
+
+  const handleDeleteReflection = () => {
+    if (!openScrollId) return;
+    deleteReflectionMutation.mutate({ scrollId: openScrollId });
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a1a] via-[#0d0d2b] to-[#0a0a1a]">
       {/* Header */}
@@ -172,9 +211,21 @@ export default function Profile() {
             <ChevronRight className="w-4 h-4 rotate-180" />
             <span className="font-serif">Return to Codex</span>
           </Link>
-          <Button variant="ghost" size="icon" onClick={() => refetch()}>
-            <RefreshCw className="w-4 h-4" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Link href="/payments">
+              <Button variant="ghost" size="sm" className="text-white/80 hover:text-white">
+                Payments
+              </Button>
+            </Link>
+            <Link href="/settings">
+              <Button variant="outline" size="sm" className="border-primary/30">
+                Settings
+              </Button>
+            </Link>
+            <Button variant="ghost" size="icon" onClick={() => refetch()}>
+              <RefreshCw className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -373,6 +424,79 @@ export default function Profile() {
               </Card>
             </motion.div>
 
+            {/* Reflected Scrolls */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.18 }}
+            >
+              <Card className="bg-black/40 border-primary/20">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 font-serif">
+                    <Sparkles className="w-5 h-5 text-primary" />
+                    Reflected Scrolls
+                  </CardTitle>
+                  <CardDescription>Your saved reflections</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {profile?.reflectedScrolls && profile.reflectedScrolls.length > 0 ? (
+                    <div className="space-y-3">
+                      {profile.reflectedScrolls.map((entry: { scrollId: string; reflection: string; updatedAt: Date | string | null; isMirrored?: boolean }) => {
+                        const metadata = SCROLL_BY_ID[entry.scrollId] || {
+                          title: `Scroll ${entry.scrollId}`,
+                          image: "/images/scroll-000.jpg",
+                          priceCents: 0,
+                        };
+                        const isAccessible = metadata.priceCents === 0 || unlockedSet.has(entry.scrollId);
+                        return (
+                          <div
+                            key={entry.scrollId}
+                            className="group flex items-start gap-4 p-3 rounded-lg bg-primary/5 hover:bg-primary/10 border border-primary/10 hover:border-primary/30 transition-all cursor-pointer"
+                            onClick={() => {
+                              if (isAccessible) setOpenScrollId(entry.scrollId);
+                              else setShowUnlockScrollId(entry.scrollId);
+                            }}
+                          >
+                            <div className="w-16 h-16 rounded-lg overflow-hidden">
+                              <img
+                                src={metadata.image}
+                                alt={metadata.title}
+                                className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                              />
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-serif text-white group-hover:text-primary transition-colors">
+                                  Scroll {entry.scrollId}
+                                </h4>
+                                {entry.isMirrored && (
+                                  <Badge className="bg-primary/20 text-primary border-primary/40">Mirrored</Badge>
+                                )}
+                              </div>
+                              <p className="text-sm text-muted-foreground">{metadata.title}</p>
+                              <p className="text-xs text-muted-foreground/70 mt-1 line-clamp-2">
+                                {entry.reflection}
+                              </p>
+                              <p className="text-[11px] text-muted-foreground/60 mt-1">
+                                Updated {entry.updatedAt ? new Date(entry.updatedAt).toLocaleDateString() : "recently"}
+                              </p>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <Sparkles className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+                      <p className="text-muted-foreground">No reflections yet</p>
+                      <p className="text-xs text-muted-foreground/70 mt-1">Open a scroll to save one.</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+
             <AnimatePresence>
               {showUnlockScrollId && SCROLL_BY_ID[showUnlockScrollId] && (
                 <UnlockPrompt
@@ -412,6 +536,19 @@ export default function Profile() {
                     toggleFavoriteMutation.mutate({ scrollId: openScrollId });
                   }}
                   canFavorite={Boolean(user)}
+                  canReflect={Boolean(user) && openedIsUnlocked}
+                  existingReflection={
+                    currentReflection
+                      ? {
+                          text: currentReflection.reflection,
+                          isMirrored: currentReflection.isMirrored,
+                          updatedAt: currentReflection.updatedAt,
+                        }
+                      : undefined
+                  }
+                  onSaveReflection={handleSaveReflection}
+                  onDeleteReflection={handleDeleteReflection}
+                  isSavingReflection={saveReflectionMutation.isPending || deleteReflectionMutation.isPending}
                 />
               )}
             </AnimatePresence>
@@ -423,17 +560,24 @@ export default function Profile() {
               transition={{ delay: 0.2 }}
             >
               <Card className="bg-black/40 border-primary/20">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 font-serif">
-                    <ShoppingBag className="w-5 h-5 text-primary" />
-                    Purchase History
-                  </CardTitle>
-                  <CardDescription>Your sacred acquisitions</CardDescription>
+                <CardHeader className="flex flex-row items-start justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2 font-serif">
+                      <ShoppingBag className="w-5 h-5 text-primary" />
+                      Purchase History
+                    </CardTitle>
+                    <CardDescription>Your sacred acquisitions</CardDescription>
+                  </div>
+                  <Link href="/payments">
+                    <Button variant="outline" size="sm" className="border-primary/30">
+                      View all
+                    </Button>
+                  </Link>
                 </CardHeader>
                 <CardContent>
                   {profile?.purchases && profile.purchases.length > 0 ? (
                     <div className="space-y-3">
-                      {profile.purchases.map((purchase: { id: number; productType: string; productId: string; createdAt: Date | null }) => (
+                      {profile.purchases.map((purchase: { id: number; productType: string; productId: string; createdAt: Date | null; displayName?: string; detail?: string; amountCents?: number; currency?: string; status?: string }) => (
                         <div 
                           key={purchase.id} 
                           className="flex items-center justify-between p-3 rounded-lg bg-primary/5 border border-primary/10"
@@ -443,21 +587,36 @@ export default function Profile() {
                               {purchase.productType === "scroll" ? (
                                 <ScrollText className="w-4 h-4 text-primary" />
                               ) : purchase.productType === "membership" ? (
-                                <Crown className="w-4 h-4 text-primary" />
-                              ) : (
-                                <Sparkles className="w-4 h-4 text-primary" />
-                              )}
-                            </div>
-                            <div>
-                              <p className="text-white capitalize">{purchase.productType}: {purchase.productId}</p>
+                              <Crown className="w-4 h-4 text-primary" />
+                            ) : (
+                              <Sparkles className="w-4 h-4 text-primary" />
+                            )}
+                          </div>
+                          <div>
+                              <p className="text-white capitalize">{purchase.displayName || `${purchase.productType}: ${purchase.productId}`}</p>
                               <p className="text-xs text-muted-foreground">
-                                {purchase.createdAt ? new Date(purchase.createdAt).toLocaleDateString() : "Recently"}
+                                {purchase.detail || purchase.productId}
+                              </p>
+                              <p className="text-[11px] text-muted-foreground/70">
+                                {purchase.createdAt ? new Date(purchase.createdAt).toLocaleString() : "Processing"}
                               </p>
                             </div>
                           </div>
-                          <Badge variant="outline" className="border-green-500/30 text-green-400">
-                            Completed
-                          </Badge>
+                          <div className="flex flex-col items-end gap-1">
+                            <p className="text-sm text-white">{formatAmount(purchase.amountCents, purchase.currency)}</p>
+                            <Badge
+                              variant="outline"
+                              className={
+                                purchase.status === "pending"
+                                  ? "border-amber-500/40 text-amber-300"
+                                  : purchase.status === "refunded"
+                                    ? "border-red-500/40 text-red-300"
+                                    : "border-green-500/40 text-green-300"
+                              }
+                            >
+                              {purchase.status ?? "completed"}
+                            </Badge>
+                          </div>
                         </div>
                       ))}
                     </div>

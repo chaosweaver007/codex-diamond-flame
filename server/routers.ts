@@ -6,15 +6,66 @@ import { z } from "zod";
 import Stripe from "stripe";
 import { invokeLLM } from "./_core/llm";
 import { getDb } from "./db";
-import { users, chatHistory, unlockedScrolls, purchases, favorites } from "../drizzle/schema";
+import { users, chatHistory, unlockedScrolls, purchases, favorites, userSettings, reflectedScrolls, newsletterSubscriptions } from "../drizzle/schema";
 import { and, eq, desc } from "drizzle-orm";
 import { MEMBERSHIP_TIERS, ARTIFACTS } from "./stripe/products";
 import { codexRouter } from "./codex/router";
 import { synthsaraOrgRouter } from "./synthsaraOrg/router";
+import { SCROLL_BY_ID } from "@shared/scrolls";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2025-12-15.clover",
 });
+
+const DEFAULT_SETTINGS = {
+  newsletterOptIn: false,
+  unlockEmailAlerts: true,
+  productUpdatesOptIn: false,
+};
+
+function deriveScrollId(productId: string) {
+  return productId.startsWith("scroll_") ? productId.replace("scroll_", "") : productId;
+}
+
+function describePurchase(purchase: any) {
+  const productType = purchase.productType as keyof typeof ARTIFACTS | "membership" | "scroll" | "ritual";
+  const normalizedStatus = purchase.status ?? "completed";
+  const currency = purchase.currency ?? "usd";
+  let amountCents = purchase.amountCents ?? 0;
+  let displayName = purchase.productId;
+  let detail = "";
+  let scrollId: string | null = null;
+
+  if (productType === "scroll") {
+    scrollId = deriveScrollId(purchase.productId);
+    const def = SCROLL_BY_ID[scrollId];
+    displayName = def ? `Scroll ${scrollId}: ${def.title}` : `Scroll ${scrollId}`;
+    detail = def?.excerpt ?? "";
+    amountCents = amountCents || def?.priceCents || 0;
+  } else if (productType === "artifact" || productType === "ritual") {
+    const artifact = ARTIFACTS[purchase.productId as keyof typeof ARTIFACTS];
+    displayName = artifact?.name ?? purchase.productId;
+    detail = artifact?.description ?? "";
+    amountCents = amountCents || artifact?.price || 0;
+  } else if (productType === "membership") {
+    const tier = MEMBERSHIP_TIERS[purchase.productId as keyof typeof MEMBERSHIP_TIERS] ||
+      MEMBERSHIP_TIERS[(purchase.tier as keyof typeof MEMBERSHIP_TIERS) ?? ""] ||
+      MEMBERSHIP_TIERS[purchase.productId.replace("tier_", "") as keyof typeof MEMBERSHIP_TIERS];
+    displayName = tier ? `${tier.name} Membership` : `Membership: ${purchase.productId}`;
+    detail = tier?.description ?? "";
+    amountCents = amountCents || tier?.priceMonthly || 0;
+  }
+
+  return {
+    ...purchase,
+    scrollId,
+    displayName,
+    detail,
+    amountCents,
+    currency,
+    status: normalizedStatus,
+  };
+}
 
 export const appRouter = router({
   system: systemRouter,
@@ -75,7 +126,6 @@ export const appRouter = router({
       const db = await getDb();
       if (!db) throw new Error("Database unavailable");
       
-      // Get user data
       const userResult = await db
         .select()
         .from(users)
@@ -84,33 +134,52 @@ export const appRouter = router({
       
       const user = userResult[0];
       if (!user) throw new Error("User not found");
-      
-      // Get unlocked scrolls
-      const scrollsResult = await db
-        .select()
-        .from(unlockedScrolls)
-        .where(eq(unlockedScrolls.userId, ctx.user.id));
-      
-      // Get purchase history
-      const purchasesResult = await db
-        .select()
-        .from(purchases)
-        .where(eq(purchases.userId, ctx.user.id))
-        .orderBy(desc(purchases.createdAt));
 
-      // Get favorites
-      const favoritesResult = await db
-        .select({ scrollId: favorites.scrollId, createdAt: favorites.createdAt })
-        .from(favorites)
-        .where(eq(favorites.userId, ctx.user.id))
-        .orderBy(desc(favorites.createdAt));
-      
-      // Get chat history count
-      const chatHistoryResult = await db
-        .select()
-        .from(chatHistory)
-        .where(eq(chatHistory.userId, ctx.user.id));
-      
+      const [scrollsResult, purchasesResult, favoritesResult, chatHistoryResult, settingsResult, reflectionsRaw] =
+        await Promise.all([
+          db
+            .select()
+            .from(unlockedScrolls)
+            .where(eq(unlockedScrolls.userId, ctx.user.id)),
+          db
+            .select()
+            .from(purchases)
+            .where(eq(purchases.userId, ctx.user.id))
+            .orderBy(desc(purchases.createdAt)),
+          db
+            .select({ scrollId: favorites.scrollId, createdAt: favorites.createdAt })
+            .from(favorites)
+            .where(eq(favorites.userId, ctx.user.id))
+            .orderBy(desc(favorites.createdAt)),
+          db
+            .select()
+            .from(chatHistory)
+            .where(eq(chatHistory.userId, ctx.user.id)),
+          db
+            .select()
+            .from(userSettings)
+            .where(eq(userSettings.userId, ctx.user.id))
+            .limit(1),
+          db
+            .select()
+            .from(reflectedScrolls)
+            .where(eq(reflectedScrolls.userId, ctx.user.id))
+            .orderBy(desc(reflectedScrolls.updatedAt)),
+        ]);
+
+      const settings = settingsResult[0]
+        ? { ...DEFAULT_SETTINGS, ...settingsResult[0] }
+        : { ...DEFAULT_SETTINGS, userId: ctx.user.id };
+
+      const reflected = reflectionsRaw.map((entry) => {
+        const scrollDef = SCROLL_BY_ID[entry.scrollId];
+        return {
+          ...entry,
+          title: scrollDef?.title ?? entry.scrollId,
+          excerpt: scrollDef?.excerpt ?? "",
+        };
+      });
+
       return {
         user: {
           id: user.id,
@@ -123,8 +192,10 @@ export const appRouter = router({
         },
         unlockedScrolls: scrollsResult,
         favorites: favoritesResult,
-        purchases: purchasesResult,
+        purchases: purchasesResult.map(describePurchase),
         chatMessageCount: chatHistoryResult.length,
+        settings,
+        reflectedScrolls: reflected,
       };
     }),
 
@@ -165,6 +236,148 @@ export const appRouter = router({
         });
 
         return { favorited: true } as const;
+      }),
+
+    getSettings: protectedProcedure.query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+
+      const settingsResult = await db
+        .select()
+        .from(userSettings)
+        .where(eq(userSettings.userId, ctx.user.id))
+        .limit(1);
+
+      return settingsResult[0] ? { ...DEFAULT_SETTINGS, ...settingsResult[0] } : { ...DEFAULT_SETTINGS, userId: ctx.user.id };
+    }),
+
+    updateSettings: protectedProcedure
+      .input(z.object({
+        newsletterOptIn: z.boolean().optional(),
+        unlockEmailAlerts: z.boolean().optional(),
+        productUpdatesOptIn: z.boolean().optional(),
+        isMirrored: z.boolean().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database unavailable");
+
+        const existing = await db
+          .select()
+          .from(userSettings)
+          .where(eq(userSettings.userId, ctx.user.id))
+          .limit(1);
+
+        const next = {
+          userId: ctx.user.id,
+          newsletterOptIn: input.newsletterOptIn ?? existing[0]?.newsletterOptIn ?? DEFAULT_SETTINGS.newsletterOptIn,
+          unlockEmailAlerts: input.unlockEmailAlerts ?? existing[0]?.unlockEmailAlerts ?? DEFAULT_SETTINGS.unlockEmailAlerts,
+          productUpdatesOptIn: input.productUpdatesOptIn ?? existing[0]?.productUpdatesOptIn ?? DEFAULT_SETTINGS.productUpdatesOptIn,
+          updatedAt: new Date(),
+        };
+
+        await db
+          .insert(userSettings)
+          .values(next)
+          .onDuplicateKeyUpdate({
+            set: {
+              newsletterOptIn: next.newsletterOptIn,
+              unlockEmailAlerts: next.unlockEmailAlerts,
+              productUpdatesOptIn: next.productUpdatesOptIn,
+              updatedAt: next.updatedAt,
+            },
+          });
+
+        if (input.isMirrored !== undefined) {
+          await db
+            .update(users)
+            .set({ isMirrored: input.isMirrored })
+            .where(eq(users.id, ctx.user.id));
+        }
+
+        return { success: true, settings: next };
+      }),
+
+    getReflectedScrolls: protectedProcedure.query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database unavailable");
+
+      const reflections = await db
+        .select()
+        .from(reflectedScrolls)
+        .where(eq(reflectedScrolls.userId, ctx.user.id))
+        .orderBy(desc(reflectedScrolls.updatedAt));
+
+      return reflections.map((entry) => {
+        const def = SCROLL_BY_ID[entry.scrollId];
+        return {
+          ...entry,
+          title: def?.title ?? entry.scrollId,
+          excerpt: def?.excerpt ?? "",
+        };
+      });
+    }),
+
+    saveReflectedScroll: protectedProcedure
+      .input(z.object({
+        scrollId: z.string(),
+        reflection: z.string().min(3).max(4000),
+        isMirrored: z.boolean().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database unavailable");
+
+        const scrollDef = SCROLL_BY_ID[input.scrollId];
+        if (!scrollDef) {
+          throw new Error("Unknown scroll");
+        }
+
+        if (scrollDef.priceCents > 0) {
+          const hasAccess = await db
+            .select({ id: unlockedScrolls.id })
+            .from(unlockedScrolls)
+            .where(and(eq(unlockedScrolls.userId, ctx.user.id), eq(unlockedScrolls.scrollId, input.scrollId)))
+            .limit(1);
+
+          if (hasAccess.length === 0) {
+            throw new Error("Scroll is locked for this user");
+          }
+        }
+
+        const payload = {
+          userId: ctx.user.id,
+          scrollId: input.scrollId,
+          reflection: input.reflection,
+          isMirrored: input.isMirrored ?? false,
+          updatedAt: new Date(),
+        };
+
+        await db
+          .insert(reflectedScrolls)
+          .values(payload)
+          .onDuplicateKeyUpdate({
+            set: {
+              reflection: payload.reflection,
+              isMirrored: payload.isMirrored,
+              updatedAt: payload.updatedAt,
+            },
+          });
+
+        return { success: true };
+      }),
+
+    deleteReflectedScroll: protectedProcedure
+      .input(z.object({ scrollId: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database unavailable");
+
+        await db
+          .delete(reflectedScrolls)
+          .where(and(eq(reflectedScrolls.userId, ctx.user.id), eq(reflectedScrolls.scrollId, input.scrollId)));
+
+        return { success: true };
       }),
     
     checkScrollAccess: protectedProcedure
@@ -298,6 +511,16 @@ export const appRouter = router({
             product_type: input.productType,
             tier: input.tier || "",
           },
+          payment_intent_data: {
+            metadata: {
+              user_id: ctx.user.id.toString(),
+              customer_email: ctx.user.email || "",
+              customer_name: ctx.user.name || "",
+              product_id: input.productId,
+              product_type: input.productType,
+              tier: input.tier || "",
+            },
+          },
         });
         
         return { url: session.url };
@@ -313,8 +536,106 @@ export const appRouter = router({
         .where(eq(purchases.userId, ctx.user.id))
         .orderBy(desc(purchases.createdAt));
       
-      return result;
+      return result.map(describePurchase);
     }),
+  }),
+
+  newsletter: router({
+    subscribe: publicProcedure
+      .input(z.object({
+        email: z.string().email().optional(),
+        source: z.string().max(64).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database unavailable");
+
+        const email = input.email || ctx.user?.email;
+        if (!email) {
+          throw new Error("Email is required");
+        }
+
+        const now = new Date();
+
+        await db
+          .insert(newsletterSubscriptions)
+          .values({
+            email,
+            userId: ctx.user?.id ?? null,
+            source: input.source || "app",
+            status: "subscribed",
+            updatedAt: now,
+          })
+          .onDuplicateKeyUpdate({
+            set: {
+              status: "subscribed",
+              userId: ctx.user?.id ?? null,
+              source: input.source || "app",
+              updatedAt: now,
+            },
+          });
+
+        if (ctx.user?.id) {
+          await db
+            .insert(userSettings)
+            .values({
+              userId: ctx.user.id,
+              newsletterOptIn: true,
+              updatedAt: now,
+            })
+            .onDuplicateKeyUpdate({
+              set: { newsletterOptIn: true, updatedAt: now },
+            });
+        }
+
+        return { success: true };
+      }),
+
+    unsubscribe: publicProcedure
+      .input(z.object({
+        email: z.string().email().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database unavailable");
+
+        const email = input.email || ctx.user?.email;
+        if (!email) {
+          throw new Error("Email is required");
+        }
+
+        const now = new Date();
+
+        await db
+          .insert(newsletterSubscriptions)
+          .values({
+            email,
+            userId: ctx.user?.id ?? null,
+            status: "unsubscribed",
+            updatedAt: now,
+          })
+          .onDuplicateKeyUpdate({
+            set: {
+              status: "unsubscribed",
+              updatedAt: now,
+            },
+          });
+
+        if (ctx.user?.id) {
+          await db
+            .insert(userSettings)
+            .values({
+              userId: ctx.user.id,
+              newsletterOptIn: false,
+              updatedAt: now,
+            })
+            .onDuplicateKeyUpdate({
+              set: { newsletterOptIn: false, updatedAt: now },
+            });
+        }
+
+        return { success: true };
+      }),
   }),
 
   // Sarah AI - Guardian of Synthesis

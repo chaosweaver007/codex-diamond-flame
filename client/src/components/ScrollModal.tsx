@@ -6,6 +6,9 @@ import { Streamdown } from "streamdown";
 
 import { getLoginUrl } from "@/const";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { useMirror } from "@/contexts/MirrorContext";
 
 export type ScrollModalScroll = {
   id: string;
@@ -15,6 +18,12 @@ export type ScrollModalScroll = {
   excerpt: string;
   priceCents: number;
   isFree: boolean;
+};
+
+type ScrollReflection = {
+  text: string;
+  updatedAt?: Date | string | null;
+  isMirrored?: boolean;
 };
 
 export function UnlockPrompt({
@@ -137,6 +146,11 @@ export function ScrollModal({
   isFavorited,
   onToggleFavorite,
   canFavorite,
+  existingReflection,
+  onSaveReflection,
+  onDeleteReflection,
+  isSavingReflection,
+  canReflect,
 }: {
   scroll: ScrollModalScroll;
   onClose: () => void;
@@ -145,8 +159,16 @@ export function ScrollModal({
   isFavorited: boolean;
   onToggleFavorite: () => void;
   canFavorite: boolean;
+  existingReflection?: ScrollReflection | null;
+  onSaveReflection?: (value: string, isMirrored: boolean) => void;
+  onDeleteReflection?: () => void;
+  isSavingReflection?: boolean;
+  canReflect?: boolean;
 }) {
   const [showCelebration, setShowCelebration] = useState(isFirstTime);
+  const { isMirrored: globalMirror } = useMirror();
+  const [reflectionText, setReflectionText] = useState(existingReflection?.text ?? "");
+  const [reflectAsMirror, setReflectAsMirror] = useState(existingReflection?.isMirrored ?? globalMirror);
 
   useEffect(() => {
     if (!isFirstTime) return;
@@ -156,6 +178,11 @@ export function ScrollModal({
     }, 3000);
     return () => clearTimeout(timer);
   }, [isFirstTime, onViewed]);
+
+  useEffect(() => {
+    setReflectionText(existingReflection?.text ?? "");
+    setReflectAsMirror(existingReflection?.isMirrored ?? globalMirror);
+  }, [existingReflection?.text, existingReflection?.isMirrored, scroll.id, globalMirror]);
 
   return (
     <div
@@ -273,6 +300,60 @@ export function ScrollModal({
                 ★ Save to Favorites
               </Button>
             </div>
+
+            {canReflect && (
+              <div className="mt-8 space-y-3 rounded-xl border border-primary/20 bg-black/50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-white font-medium">Reflected Scroll</p>
+                    <p className="text-xs text-muted-foreground">Capture what this scroll mirrored back to you.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Mirror voice</span>
+                    <Switch
+                      checked={reflectAsMirror}
+                      onCheckedChange={setReflectAsMirror}
+                      className="data-[state=checked]:bg-primary"
+                    />
+                  </div>
+                </div>
+                <Textarea
+                  value={reflectionText}
+                  onChange={(e) => setReflectionText(e.target.value)}
+                  placeholder="Write the resonance that wants to be remembered..."
+                  className="min-h-[120px] bg-black/40 text-white border-primary/20"
+                />
+                <div className="flex justify-end gap-2">
+                  {existingReflection && onDeleteReflection && (
+                    <Button
+                      variant="ghost"
+                      className="text-white/70 hover:text-white"
+                      disabled={isSavingReflection}
+                      onClick={onDeleteReflection}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                  <Button
+                    onClick={() => onSaveReflection?.(reflectionText.trim(), reflectAsMirror)}
+                    disabled={!onSaveReflection || !reflectionText.trim() || isSavingReflection}
+                    className="bg-primary text-black hover:bg-primary/80"
+                  >
+                    {isSavingReflection ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4 mr-2" />
+                        Save Reflection
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
 
             <div className="mt-12 flex justify-center">
               <button className="flex items-center gap-2 text-primary hover:text-white transition-colors text-sm uppercase tracking-widest">

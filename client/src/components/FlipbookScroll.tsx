@@ -142,10 +142,32 @@ export function FlipbookScroll() {
   );
   const favoriteIds = new Set(favorites.map((f) => f.scrollId));
 
+  const { data: reflections = [], refetch: refetchReflections } = trpc.user.getReflectedScrolls.useQuery(
+    undefined,
+    { enabled: isAuthenticated }
+  );
+  const currentReflection = openScroll ? reflections.find((r) => r.scrollId === openScroll.id) : undefined;
+
   const toggleFavoriteMutation = trpc.user.toggleFavorite.useMutation({
     onSuccess: () => {
       refetchFavorites();
     },
+  });
+
+  const saveReflectionMutation = trpc.user.saveReflectedScroll.useMutation({
+    onSuccess: () => {
+      toast.success("Reflection saved");
+      refetchReflections();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const deleteReflectionMutation = trpc.user.deleteReflectedScroll.useMutation({
+    onSuccess: () => {
+      toast.info("Reflection removed");
+      refetchReflections();
+    },
+    onError: (error) => toast.error(error.message),
   });
   
   // Stripe checkout mutation
@@ -194,6 +216,16 @@ export function FlipbookScroll() {
   const handleToggleFavorite = () => {
     if (!openScroll) return;
     toggleFavoriteMutation.mutate({ scrollId: openScroll.id });
+  };
+
+  const handleSaveReflection = (value: string, isMirrored: boolean) => {
+    if (!openScroll) return;
+    saveReflectionMutation.mutate({ scrollId: openScroll.id, reflection: value, isMirrored });
+  };
+
+  const handleDeleteReflection = () => {
+    if (!openScroll) return;
+    deleteReflectionMutation.mutate({ scrollId: openScroll.id });
   };
   
   // Check for successful payment return
@@ -265,6 +297,19 @@ export function FlipbookScroll() {
             isFavorited={favoriteIds.has(openScroll.id)}
             onToggleFavorite={handleToggleFavorite}
             canFavorite={isAuthenticated}
+            canReflect={isAuthenticated && (openScroll.isFree || unlockedIds.includes(openScroll.id))}
+            existingReflection={
+              currentReflection
+                ? {
+                    text: currentReflection.reflection,
+                    isMirrored: currentReflection.isMirrored,
+                    updatedAt: currentReflection.updatedAt,
+                  }
+                : undefined
+            }
+            onSaveReflection={handleSaveReflection}
+            onDeleteReflection={handleDeleteReflection}
+            isSavingReflection={saveReflectionMutation.isPending || deleteReflectionMutation.isPending}
           />
         )}
       </AnimatePresence>
