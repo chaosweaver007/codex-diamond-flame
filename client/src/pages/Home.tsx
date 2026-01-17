@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "wouter";
 import {
   Bar,
   BarChart,
@@ -8,6 +9,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 
 type PillarKey = "skillforge" | "rtme" | "synthsara";
 
@@ -137,9 +142,18 @@ const chartTicks = {
 
 export default function Home() {
   const [activePillar, setActivePillar] = useState<PillarKey>("skillforge");
+  const [newsletterEmail, setNewsletterEmail] = useState("");
 
   const activeContent = pillarContent[activePillar];
   const tabKeys = useMemo(() => Object.keys(pillarContent) as PillarKey[], []);
+
+  const newsletterMutation = trpc.newsletter.subscribe.useMutation({
+    onSuccess: () => {
+      toast.success("Subscribed to the Codex dispatch");
+      setNewsletterEmail("");
+    },
+    onError: (error) => toast.error(error.message),
+  });
 
   return (
     <div className="min-h-screen bg-stone-50 text-stone-800 antialiased selection:bg-teal-100 selection:text-teal-800">
@@ -154,11 +168,29 @@ export default function Home() {
                 Cognitive Artifact Explorer
               </span>
             </div>
-            <div className="flex items-center space-x-4 text-sm text-stone-500">
-              <span className="hidden md:inline">Source: conversations (2).json</span>
-              <span className="px-2 py-1 bg-stone-100 rounded text-xs font-mono">
+            <div className="flex items-center space-x-3 text-sm text-stone-500">
+              <span className="hidden lg:inline">Source: conversations (2).json</span>
+              <span className="hidden md:inline px-2 py-1 bg-stone-100 rounded text-xs font-mono">
                 STATUS: ANALYZED
               </span>
+              <Link
+                href="/synthsara-org"
+                className="px-3 py-1.5 rounded-full border border-stone-200 text-xs font-semibold text-stone-700 hover:bg-stone-100 transition-colors"
+              >
+                Synthsara.org
+              </Link>
+              <Link
+                href="/codex"
+                className="px-3 py-1.5 rounded-full bg-teal-600 text-white text-xs font-semibold shadow-sm hover:bg-teal-700 transition-colors"
+              >
+                Synthsara Codex
+              </Link>
+              <Link
+                href="/profile"
+                className="px-3 py-1.5 rounded-full border border-stone-200 text-xs font-semibold text-stone-700 hover:bg-stone-100 transition-colors"
+              >
+                Profile
+              </Link>
             </div>
           </div>
         </div>
@@ -475,6 +507,41 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="mt-12 bg-gradient-to-r from-teal-50 via-white to-amber-50 border border-teal-100 rounded-2xl p-8 flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="space-y-2 text-center md:text-left">
+            <p className="text-sm font-semibold text-teal-700">Codex Dispatch</p>
+            <h3 className="text-2xl font-serif text-stone-900">Receive new scroll drops and rituals</h3>
+            <p className="text-sm text-stone-600">
+              One concise email per week with mirror prompts, new unlocks, and Synthsara field notes.
+            </p>
+          </div>
+          <form
+            className="flex flex-col md:flex-row gap-3 w-full md:w-auto"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!newsletterEmail.trim()) {
+                toast.error("Enter an email to subscribe");
+                return;
+              }
+              newsletterMutation.mutate({ email: newsletterEmail.trim(), source: "home" });
+            }}
+          >
+            <Input
+              type="email"
+              placeholder="you@reflection.io"
+              value={newsletterEmail}
+              onChange={(e) => setNewsletterEmail(e.target.value)}
+              className="bg-white border-stone-200"
+            />
+            <Button
+              type="submit"
+              disabled={newsletterMutation.isPending}
+              className="bg-teal-600 hover:bg-teal-700 text-white"
+            >
+              {newsletterMutation.isPending ? "Joining..." : "Join the flame"}
+            </Button>
+          </form>
+        </section>
         <footer className="text-center text-stone-400 text-sm py-8">
           <p>© 2026 Forensic Data Analysis generated from Source Report.</p>
         </footer>
@@ -482,3 +549,4 @@ export default function Home() {
     </div>
   );
 }
+

@@ -2,11 +2,104 @@ import { Request, Response } from "express";
 import Stripe from "stripe";
 import { getDb } from "../db";
 import { users, purchases, unlockedScrolls } from "../../drizzle/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { SCROLL_BY_ID } from "@shared/scrolls";
+import { ARTIFACTS, MEMBERSHIP_TIERS } from "./products";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2025-12-15.clover",
 });
+
+function deriveScrollId(productId: string) {
+  return productId.startsWith("scroll_") ? productId.replace("scroll_", "") : productId;
+}
+
+function normalizePurchaseStatus(
+  status: Stripe.Checkout.Session.PaymentStatus | Stripe.PaymentIntent.Status | null | undefined
+): "completed" | "pending" | "refunded" {
+  if (!status) return "pending";
+  if (status === "paid" || status === "no_payment_required" || status === "succeeded") return "completed";
+  if (status === "canceled") return "refunded";
+  return "pending";
+}
+
+async function recordPurchaseAndUnlock({
+  userId,
+  productId,
+  productType,
+  paymentIntentId,
+  amountCents,
+  currency,
+  status,
+  tier,
+  shouldUnlock = true,
+}: {
+  userId: number;
+  productId: string;
+  productType: "scroll" | "artifact" | "membership" | "ritual";
+  paymentIntentId: string;
+  amountCents?: number | null;
+  currency?: string | null;
+  status?: "pending" | "completed" | "refunded";
+  tier?: string | null;
+  shouldUnlock?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) return;
+
+  const existingPurchase = await db
+    .select({ id: purchases.id })
+    .from(purchases)
+    .where(eq(purchases.stripePaymentIntentId, paymentIntentId))
+    .limit(1);
+  if (existingPurchase.length > 0) {
+    return;
+  }
+
+  const computedStatus = status ?? "completed";
+  const normalizedCurrency = currency ?? "usd";
+
+  let computedAmount = amountCents ?? 0;
+
+  if (!computedAmount) {
+    if (productType === "scroll") {
+      const scrollId = deriveScrollId(productId);
+      computedAmount = SCROLL_BY_ID[scrollId]?.priceCents ?? 0;
+    } else if (productType === "artifact" || productType === "ritual") {
+      computedAmount = ARTIFACTS[productId as keyof typeof ARTIFACTS]?.price ?? 0;
+    } else if (productType === "membership" && tier) {
+      computedAmount = MEMBERSHIP_TIERS[tier as keyof typeof MEMBERSHIP_TIERS]?.priceMonthly ?? 0;
+    }
+  }
+
+  await db.insert(purchases).values({
+    userId,
+    stripePaymentIntentId: paymentIntentId,
+    productType,
+    productId,
+    amountCents: computedAmount,
+    currency: normalizedCurrency,
+    status: computedStatus,
+  });
+
+  if (productType === "scroll" && shouldUnlock) {
+    const scrollId = deriveScrollId(productId);
+    const unlocked = await db
+      .select({ id: unlockedScrolls.id })
+      .from(unlockedScrolls)
+      .where(and(eq(unlockedScrolls.userId, userId), eq(unlockedScrolls.scrollId, scrollId)))
+      .limit(1);
+
+    if (unlocked.length === 0) {
+      await db.insert(unlockedScrolls).values({
+        userId,
+        scrollId,
+        unlockedAt: new Date(),
+      });
+      console.log(`[Webhook] Scroll ${scrollId} unlocked for user ${userId}`);
+    }
+  }
+}
 
 export async function handleStripeWebhook(req: Request, res: Response) {
   const sig = req.headers["stripe-signature"] as string;
@@ -37,10 +130,14 @@ export async function handleStripeWebhook(req: Request, res: Response) {
         break;
       }
       case "checkout.session.async_payment_succeeded": {
-        // Handle delayed payment methods (bank transfer, etc.)
         const session = event.data.object as Stripe.Checkout.Session;
         await handleCheckoutComplete(session);
         console.log(`[Webhook] Async payment succeeded for session: ${session.id}`);
+        break;
+      }
+      case "payment_intent.succeeded": {
+        const paymentIntent = event.data.object as Stripe.PaymentIntent;
+        await handlePaymentIntentSucceeded(paymentIntent);
         break;
       }
       case "customer.subscription.created":
@@ -90,66 +187,73 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
       .where(eq(users.id, userIdNum));
   }
 
-  // Handle one-time purchases
-  if (session.mode === "payment") {
-    const productId = session.metadata?.product_id;
-    const productType = session.metadata?.product_type as any;
+  const productId = session.metadata?.product_id;
+  const productType = session.metadata?.product_type as any;
+  const tier = session.metadata?.tier || null;
 
-    if (productId && productType) {
-      // Record the purchase
-      await db.insert(purchases).values({
-        userId: userIdNum,
-        stripePaymentIntentId: session.payment_intent as string,
-        productType,
-        productId,
-      });
+  // Avoid unlocking until payment is confirmed
+  const paymentStatus = normalizePurchaseStatus(session.payment_status);
+  const shouldUnlock = paymentStatus === "completed";
 
-      // If it's a scroll, unlock it
-      if (productType === "scroll") {
-        // Extract the actual scroll ID from the product ID (e.g., "scroll_007-D" -> "007-D")
-        const scrollId = productId.startsWith("scroll_") 
-          ? productId.replace("scroll_", "") 
-          : productId;
-        
-        // Check if already unlocked to avoid duplicates
-        const existing = await db
-          .select()
-          .from(unlockedScrolls)
-          .where(eq(unlockedScrolls.userId, userIdNum))
-          .limit(100);
-        
-        const alreadyUnlocked = existing.some(s => s.scrollId === scrollId);
-        
-        if (!alreadyUnlocked) {
-          await db.insert(unlockedScrolls).values({
-            userId: userIdNum,
-            scrollId: scrollId,
-            unlockedAt: new Date(),
-          });
-          console.log(`[Webhook] Scroll ${scrollId} unlocked for user ${userId}`);
-        } else {
-          console.log(`[Webhook] Scroll ${scrollId} already unlocked for user ${userId}`);
-        }
-      }
+  if (productId && productType) {
+    const paymentIntentId =
+      typeof session.payment_intent === "string"
+        ? session.payment_intent
+        : session.payment_intent?.id || session.id;
 
-      console.log(`[Webhook] Purchase recorded: ${productType} - ${productId} for user ${userId}`);
-    }
+    await recordPurchaseAndUnlock({
+      userId: userIdNum,
+      productId,
+      productType,
+      paymentIntentId,
+      amountCents: session.amount_total,
+      currency: session.currency || "usd",
+      status: paymentStatus,
+      tier,
+      shouldUnlock,
+    });
+
+    console.log(`[Webhook] Purchase recorded: ${productType} - ${productId} for user ${userId}`);
   }
 
-  // Handle subscription
+  // Handle subscription tier upgrade if applicable
   if (session.mode === "subscription" && session.subscription) {
     await db
       .update(users)
       .set({ stripeSubscriptionId: session.subscription as string })
       .where(eq(users.id, userIdNum));
 
-    // Update tier based on subscription
-    const tier = session.metadata?.tier as any;
     if (tier) {
       await db.update(users).set({ tier }).where(eq(users.id, userIdNum));
       console.log(`[Webhook] User ${userId} upgraded to tier: ${tier}`);
     }
   }
+}
+
+async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent) {
+  const metadata = paymentIntent.metadata || {};
+  const userId = metadata.user_id;
+  const productId = metadata.product_id;
+  const productType = metadata.product_type as any;
+
+  if (!userId || !productId || !productType) {
+    console.warn("[Webhook] PaymentIntent missing metadata, skipping purchase record");
+    return;
+  }
+
+  const status = normalizePurchaseStatus(paymentIntent.status);
+
+  await recordPurchaseAndUnlock({
+    userId: parseInt(userId, 10),
+    productId,
+    productType,
+    paymentIntentId: paymentIntent.id,
+    amountCents: paymentIntent.amount_received ?? paymentIntent.amount ?? undefined,
+    currency: paymentIntent.currency ?? "usd",
+    status,
+    tier: metadata.tier || null,
+    shouldUnlock: status === "completed",
+  });
 }
 
 async function handleSubscriptionUpdate(subscription: Stripe.Subscription) {

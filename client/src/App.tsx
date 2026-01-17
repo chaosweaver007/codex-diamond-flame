@@ -8,13 +8,21 @@ import { AudioProvider } from "./contexts/AudioContext";
 import { MirrorProvider } from "./contexts/MirrorContext";
 import Home from "./pages/Home";
 import Profile from "./pages/Profile";
+import Codex from "./pages/Codex";
+import SynthsaraOrg from "./pages/SynthsaraOrg";
+import PaymentHistory from "./pages/PaymentHistory";
+import Settings from "./pages/Settings";
 
 function Router() {
   // make sure to consider if you need authentication for certain routes
   return (
     <Switch>
       <Route path={"/"} component={Home} />
+      <Route path={"/codex"} component={Codex} />
+      <Route path={"/synthsara-org"} component={SynthsaraOrg} />
       <Route path={"/profile"} component={Profile} />
+      <Route path={"/payments"} component={PaymentHistory} />
+      <Route path={"/settings"} component={Settings} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />

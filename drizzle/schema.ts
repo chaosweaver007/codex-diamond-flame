@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, uniqueIndex } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -68,6 +68,9 @@ export const purchases = mysqlTable("purchases", {
   stripePaymentIntentId: varchar("stripePaymentIntentId", { length: 255 }).notNull(),
   productType: mysqlEnum("productType", ["scroll", "artifact", "membership", "ritual"]).notNull(),
   productId: varchar("productId", { length: 64 }).notNull(),
+  amountCents: int("amountCents").default(0).notNull(),
+  currency: varchar("currency", { length: 8 }).default("usd").notNull(),
+  status: mysqlEnum("status", ["pending", "completed", "refunded"]).default("completed").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
@@ -87,3 +90,59 @@ export const favorites = mysqlTable("favorites", {
 
 export type Favorite = typeof favorites.$inferSelect;
 export type InsertFavorite = typeof favorites.$inferInsert;
+
+/**
+ * User settings for communications and notifications.
+ * Separated from the main user row so settings can evolve independently.
+ */
+export const userSettings = mysqlTable("user_settings", {
+  userId: int("userId").primaryKey(),
+  newsletterOptIn: boolean("newsletterOptIn").default(false).notNull(),
+  unlockEmailAlerts: boolean("unlockEmailAlerts").default(true).notNull(),
+  productUpdatesOptIn: boolean("productUpdatesOptIn").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type UserSettings = typeof userSettings.$inferSelect;
+export type InsertUserSettings = typeof userSettings.$inferInsert;
+
+/**
+ * Reflected Scrolls hold user-authored reflections on unlocked scrolls.
+ */
+export const reflectedScrolls = mysqlTable(
+  "reflected_scrolls",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    scrollId: varchar("scrollId", { length: 32 }).notNull(),
+    reflection: text("reflection").notNull(),
+    isMirrored: boolean("isMirrored").default(false).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({
+    uniqueReflection: uniqueIndex("reflected_scroll_user_scroll_idx").on(table.userId, table.scrollId),
+  })
+);
+
+export type ReflectedScroll = typeof reflectedScrolls.$inferSelect;
+export type InsertReflectedScroll = typeof reflectedScrolls.$inferInsert;
+
+/**
+ * Newsletter subscriptions for both guests and authenticated users.
+ */
+export const newsletterSubscriptions = mysqlTable("newsletter_subscriptions", {
+  id: int("id").autoincrement().primaryKey(),
+  email: varchar("email", { length: 320 }).notNull(),
+  userId: int("userId"),
+  status: mysqlEnum("status", ["subscribed", "unsubscribed", "bounced"]).default("subscribed").notNull(),
+  source: varchar("source", { length: 64 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  uniqueEmail: uniqueIndex("newsletter_email_idx").on(table.email),
+}));
+
+export type NewsletterSubscription = typeof newsletterSubscriptions.$inferSelect;
+export type InsertNewsletterSubscription = typeof newsletterSubscriptions.$inferInsert;

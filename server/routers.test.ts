@@ -59,12 +59,11 @@ describe("Stripe Products Configuration", () => {
     const { ARTIFACTS } = await import("./stripe/products");
     
     expect(ARTIFACTS).toBeDefined();
-    expect(ARTIFACTS.scroll_000).toBeDefined();
+    expect(ARTIFACTS["scroll_003-A"]).toBeDefined();
     expect(ARTIFACTS.diamond_mind_book).toBeDefined();
     expect(ARTIFACTS.codex_bundle).toBeDefined();
     
     // Verify artifact structure
-    expect(ARTIFACTS.scroll_000.price).toBe(1100);
     expect(ARTIFACTS.diamond_mind_book.price).toBe(2200);
     expect(ARTIFACTS.codex_bundle.price).toBe(4400);
   });
@@ -72,7 +71,7 @@ describe("Stripe Products Configuration", () => {
   it("should have correct product types", async () => {
     const { ARTIFACTS } = await import("./stripe/products");
     
-    expect(ARTIFACTS.scroll_000.type).toBe("scroll");
+    expect(ARTIFACTS["scroll_003-A"].type).toBe("scroll");
     expect(ARTIFACTS.codex_bundle.type).toBe("artifact");
     expect(ARTIFACTS.ritual_mirror.type).toBe("ritual");
   });
@@ -107,6 +106,18 @@ describe("Database Schema", () => {
     const { purchases } = await import("../drizzle/schema");
     
     expect(purchases).toBeDefined();
+    const columns = Object.keys(purchases);
+    expect(columns).toContain("amountCents");
+    expect(columns).toContain("currency");
+    expect(columns).toContain("status");
+  });
+
+  it("should expose reflected scroll and newsletter tables", async () => {
+    const { reflectedScrolls, newsletterSubscriptions, userSettings } = await import("../drizzle/schema");
+    
+    expect(reflectedScrolls).toBeDefined();
+    expect(newsletterSubscriptions).toBeDefined();
+    expect(userSettings).toBeDefined();
   });
 });
 
@@ -195,5 +206,12 @@ describe("User Profile API", () => {
     
     // Check that user router exists
     expect(appRouter.user).toBeDefined();
+  });
+});
+
+describe("Newsletter Router", () => {
+  it("should expose newsletter subscribe/unsubscribe handlers", async () => {
+    const { appRouter } = await import("./routers");
+    expect(appRouter.newsletter).toBeDefined();
   });
 });
