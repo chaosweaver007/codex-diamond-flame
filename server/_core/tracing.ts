@@ -2,66 +2,75 @@ import { diag, DiagConsoleLogger, DiagLogLevel } from "@opentelemetry/api";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { Resource } from "@opentelemetry/resources";
-import { NodeSDK } from "@opentelemetry/sdk-node";
 import { SemanticResourceAttributes } from "@opentelemetry/semantic-conventions";
+import { NodeSDK } from "@opentelemetry/sdk-node";
 
-const isTracingDisabled =
-  process.env.OTEL_SDK_DISABLED === "true" ||
-  process.env.TRACING_DISABLED === "true";
+// Keep logging terse; bump to DEBUG locally if you need verbose output
+diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.ERROR);
 
-if (!isTracingDisabled) {
-  diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.WARN);
+const otlpEndpoint =
+    process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT || process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+const serviceName = process.env.OTEL_SERVICE_NAME || "codex-diamond-flame";
+const serviceVersion = process.env.npm_package_version || "dev";
 
-  const rawOtlpEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT?.trim();
-  const otlpEndpoint = rawOtlpEndpoint
-    ? (() => {
-        const normalized = rawOtlpEndpoint.replace(/\/+$/, "");
-        return /\/v1\/traces$/.test(normalized)
-          ? normalized
-          : `${normalized}/v1/traces`;
-      })()
-    : "http://localhost:4318/v1/traces";
+const sdk = otlpEndpoint
+    ? new NodeSDK({
+            resource: new Resource({
+                [SemanticResourceAttributes.SERVICE_NAME]: serviceName,
+                [SemanticResourceAttributes.SERVICE_VERSION]: serviceVersion,
+            }),
+            traceExporter: new OTLPTraceExporter({
+                url: otlpEndpoint,
+                headers: parseOtelHeaders(process.env.OTEL_EXPORTER_OTLP_HEADERS),
+            }),
+            instrumentations: [getNodeAutoInstrumentations()],
+        })
+    : null;
 
-  const sdk = new NodeSDK({
-    resource: new Resource({
-      [SemanticResourceAttributes.SERVICE_NAME]:
-        process.env.OTEL_SERVICE_NAME || "codex-diamond-flame",
-      [SemanticResourceAttributes.SERVICE_VERSION]:
-        process.env.npm_package_version,
-      [SemanticResourceAttributes.DEPLOYMENT_ENVIRONMENT]:
-        process.env.NODE_ENV || "development",
-    }),
-    traceExporter: new OTLPTraceExporter({ url: otlpEndpoint }),
-    instrumentations: [
-      getNodeAutoInstrumentations({
-        "@opentelemetry/instrumentation-http": {
-          ignoreIncomingRequestHook: req => req.url === "/healthz",
-        },
-      }),
-    ],
-  });
-
-  sdk
-    .start()
-    .then(() => {
-      console.log(`[Tracing] OpenTelemetry SDK started (OTLP ${otlpEndpoint})`);
-    })
-    .catch(error => {
-      console.error("[Tracing] Failed to start OpenTelemetry SDK", error);
-    });
-
-  const shutdown = async () => {
-    try {
-      await sdk.shutdown();
-      console.log("[Tracing] OpenTelemetry SDK shut down");
-    } catch (error) {
-      console.error("[Tracing] Error shutting down OpenTelemetry SDK", error);
-    }
-  };
-
-  process.once("SIGTERM", shutdown);
-  process.once("SIGINT", shutdown);
-  process.once("beforeExit", shutdown);
-} else {
-  console.log("[Tracing] OpenTelemetry tracing disabled via env flag");
+function parseOtelHeaders(headers: string | undefined) {
+    if (!headers) return undefined;
+    const pairs = headers
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .map((entry) => entry.split("=", 2))
+        .filter(([k, v]) => k && v) as Array<[string, string]>;
+    return pairs.length ? Object.fromEntries(pairs) : undefined;
 }
+
+async function startTracing() {
+    if (!sdk) {
+        console.log("[Tracing] OTLP endpoint not set; tracing disabled");
+        return;
+    }
+
+    try {
+        await sdk.start();
+        console.log(`[Tracing] OpenTelemetry SDK started (OTLP ${otlpEndpoint})`);
+    } catch (error) {
+        console.error("[Tracing] Failed to start OpenTelemetry SDK", error);
+    }
+}
+
+function registerShutdownHooks() {
+    if (!sdk) return;
+
+    const shutdown = async () => {
+        try {
+            await sdk.shutdown();
+            console.log("[Tracing] OpenTelemetry SDK stopped");
+        } catch (error) {
+            console.error("[Tracing] Error during OpenTelemetry shutdown", error);
+        } finally {
+            process.exit(0);
+        }
+    };
+
+    process.on("SIGTERM", shutdown);
+    process.on("SIGINT", shutdown);
+}
+
+registerShutdownHooks();
+void startTracing();
+
+export { sdk, otlpEndpoint };
