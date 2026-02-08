@@ -28,6 +28,24 @@ This repo packages the Codex experience (frontend + tRPC backend) together with 
 3) Build: `pnpm build`
 4) Type check: `pnpm check`
 
+## Deploy to Vercel
+This application is configured to deploy to Vercel with zero configuration:
+
+1. Connect your GitHub repository to Vercel
+2. Vercel will automatically detect the configuration in `vercel.json`
+3. The build process will:
+   - Run `pnpm install` to install dependencies
+   - Run `pnpm build` to build both client and server
+   - Deploy the Express app as a serverless function
+4. Set environment variables in Vercel dashboard:
+   - `DATABASE_URL` - MySQL connection string
+   - `OPENAI_API_KEY` - For LLM calls
+   - `STRIPE_SECRET_KEY` - For Stripe integration
+   - `OAUTH_SERVER_URL` - OAuth server URL
+   - Other required environment variables
+
+The application will automatically detect the Vercel environment and serve the built static files from `dist/public/`.
+
 ## Notes
 - LLM calls require `OPENAI_API_KEY` (see `server/_core/llm.ts`).
 - Stripe flows require `STRIPE_SECRET_KEY` and product config (`server/stripe/products.ts`).
